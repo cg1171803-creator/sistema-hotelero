@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Dashboard Hotelero</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Arial; background: #f0f2f5; padding: 20px; }
+        h1 { color: #2c3e50; margin-bottom: 20px; }
+        .dashboard { display: flex; flex-wrap: wrap; gap: 20px; }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            flex: 1;
+            min-width: 300px;
+        }
+        .card h3 { margin-bottom: 15px; color: #34495e; }
+        canvas { max-height: 300px; width: 100% !important; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background: #34495e; color: white; }
+        .loading { text-align: center; padding: 40px; color: #7f8c8d; }
+    </style>
+</head>
+<body>
+    <h1>Dashboard de Analisis Hotelero</h1>
+    <div class="dashboard">
+        <div class="card">
+            <h3>Reservaciones por Hotel</h3>
+            <canvas id="reservasChart"></canvas>
+        </div>
+        <div class="card">
+            <h3>Polaridad - Redes Sociales</h3>
+            <canvas id="polaridadSocialChart"></canvas>
+        </div>
+        <div class="card">
+            <h3>Polaridad - Opiniones CSV</h3>
+            <canvas id="polaridadCSVChart"></canvas>
+        </div>
+        <div class="card">
+            <h3>Top 3 Hoteles por Reservaciones</h3>
+            <table id="topHotelsTable">
+                <thead>
+                    <tr><th>Hotel</th><th>Reservaciones</th></tr>
+                </thead>
+                <tbody id="topHotelsBody">
+                    <tr><td colspan="2" class="loading">Cargando...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const API_RESERVAS = 'http://localhost:5001/reservaciones';
+        const API_SOCIAL = 'http://localhost:5002/opiniones_social';
+        const API_CSV = 'http://localhost:5003/opiniones_csv';
+
+        async function fetchData(url, nombre) {
+            try {
+                const res = await fetch(url);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                return await res.json();
+            } catch (e) {
+                console.error(`Error en ${nombre}:`, e);
+                return [];
+            }
+        }
+
+        async function loadDashboard() {
+            console.log('Cargando datos...');
+            
+            const [reservas, social, csv] = await Promise.all([
+                fetchData(API_RESERVAS, 'Reservaciones'),
+                fetchData(API_SOCIAL, 'Redes Sociales'),
+                fetchData(API_CSV, 'CSV')
+            ]);
+
+            console.log('Reservas:', reservas);
+            console.log('Social:', social);
+            console.log('CSV:', csv);
+
+            // Grafico 1: Reservaciones
+            if (reservas.length > 0) {
+                const ctx = document.getElementById('reservasChart').getContext('2d');
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: reservas.map(r => r.hotel),
+                        datasets: [{
+                            label: 'Reservaciones',
+                            data: reservas.map(r => r.reservaciones),
+                            backgroundColor: '#3498db',
+                            borderRadius: 8
+                        }]
+                    },
+                    options: { responsive: true, plugins: { legend: { position: 'top' } } }
+                });
+            }
+
+            // Grafico 2: Polaridad Redes Sociales
+            if (social.length > 0) {
+                const ctx = document.getElementById('polaridadSocialChart').getContext('2d');
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: social.map(s => s.hotel),
+                        datasets: [
+                            { label: 'Positivo (%)', data: social.map(s => s.positivo), backgroundColor: '#2ecc71' },
+                            { label: 'Negativo (%)', data: social.map(s => s.negativo), backgroundColor: '#e74c3c' }
+                        ]
+                    },
+                    options: { 
+                        responsive: true, 
+                        scales: { y: { max: 100, title: { display: true, text: 'Porcentaje (%)' } } },
+                        plugins: { tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.raw}%` } } }
+                    }
+                });
+            }
+
+            // Grafico 3: Polaridad CSV
+            if (csv.length > 0) {
+                const ctx = document.getElementById('polaridadCSVChart').getContext('2d');
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: csv.map(c => c.hotel),
+                        datasets: [
+                            { label: 'Positivo (%)', data: csv.map(c => c.positivo), backgroundColor: '#2ecc71' },
+                            { label: 'Negativo (%)', data: csv.map(c => c.negativo), backgroundColor: '#e74c3c' }
+                        ]
+                    },
+                    options: { 
+                        responsive: true, 
+                        scales: { y: { max: 100, title: { display: true, text: 'Porcentaje (%)' } } },
+                        plugins: { tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.raw}%` } } }
+                    }
+                });
+            }
+
+            // Top 3 hoteles
+            if (reservas.length > 0) {
+                const top3 = [...reservas].sort((a, b) => b.reservaciones - a.reservaciones).slice(0, 3);
+                const tbody = document.getElementById('topHotelsBody');
+                tbody.innerHTML = '';
+                top3.forEach(h => {
+                    const row = tbody.insertRow();
+                    row.insertCell(0).textContent = h.hotel;
+                    row.insertCell(1).textContent = h.reservaciones;
+                });
+            }
+        }
+
+        loadDashboard();
+        // Actualizar cada 30 segundos
+        setInterval(loadDashboard, 30000);
+    </script>
+</body>
+</html>
